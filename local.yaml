@@ -1,0 +1,67 @@
+- hosts: localhost
+  become: true
+  tasks:
+    - name: Update and upgrade apt packages
+      become: true
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400 #One day
+
+    - name: Enable cron service
+      become: true
+      shell: systemctl enable cron.service
+
+    - name: Install Docker
+      block:
+        - name: Check if Docker is installed
+          shell: docker > /dev/null 2>&1
+          register: docker_exists
+          ignore_errors: yes
+
+        - name: Install Docker if not present
+          block:
+            - name: Download Docker installer
+              get_url:
+                url: https://get.docker.com
+                dest: /tmp/docker-installer.sh
+                mode: 755 #FIXME Does not work
+
+            - name: Make installer executable (workaround)
+              shell: chmod +x /tmp/docker-installer.sh
+              args:
+                warn: false
+
+            - name: Install Docker
+              shell: /tmp/docker-installer.sh
+
+            - name: Remove Docker installer
+              file:
+                path: /tmp/docker-installer.sh
+                state: absent
+
+          when: docker_exists.failed
+
+    - name: Install k3s
+      block:
+        - name: Check if k3s is installed
+          shell: k3s > /dev/null 2>&1
+          register: k3s_exists
+          ignore_errors: yes
+
+        - name: Install k3s if not present
+          shell: ./k3s/install.sh > k3s_install.log
+          when: k3s_exists.failed
+
+    - name: Remove useless packages from the cache
+      apt:
+        autoclean: yes
+
+    - name: Remove dependencies that are no longer required
+      apt:
+        autoremove: yes
+
+    - name: Disable GNU license warning
+      file:
+        path: .hushlogin
+        state: touch
